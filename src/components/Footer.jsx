@@ -13,12 +13,12 @@ export default function Footer() {
     }}>
       <p style={{ fontSize: 13, color: '#b0a090', margin: 0 }}>
         Questions or feedback?{' '}
-        <a href="mailto:mason@masonscarby.com" style={{ color: '#8b5e3c', textDecoration: 'none', fontWeight: 600 }}>
-          mason@masonscarby.com
+        <a href="mailto:madoncs522@gmail.com" style={{ color: '#8b5e3c', textDecoration: 'none', fontWeight: 600 }}>
+          madoncs522@gmail.com
         </a>
         {' · '}
         <a
-          href="https://linkedin.com/in/masonscarby"
+          href="https://www.linkedin.com/in/mason-scarborough-1a0667299/"
           target="_blank"
           rel="noopener noreferrer"
           style={{ color: '#8b5e3c', textDecoration: 'none', fontWeight: 600 }}

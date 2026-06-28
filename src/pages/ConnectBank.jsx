@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlaidLink } from 'react-plaid-link'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-
-const BACKEND = 'http://localhost:3002'
+import { backendFetch } from '../lib/api'
 
 // Group connections by institution, most recent first within each group
 function groupByInstitution(connections) {
@@ -51,11 +50,7 @@ export default function ConnectBank() {
     setSyncStatus('syncing')
     setSyncResult(null)
     try {
-      const res = await fetch(`${BACKEND}/api/plaid/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
-      })
+      const res = await backendFetch('/api/plaid/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
       setSyncResult(data.synced)
@@ -73,11 +68,7 @@ export default function ConnectBank() {
     setStatus('opening')
     setErrorMsg('')
     try {
-      const res = await fetch(`${BACKEND}/api/plaid/link-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
-      })
+      const res = await backendFetch('/api/plaid/link-token', { method: 'POST' })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setLinkToken(data.link_token)
@@ -90,12 +81,10 @@ export default function ConnectBank() {
   const onSuccess = useCallback(async (public_token, metadata) => {
     setStatus('exchanging')
     try {
-      const res = await fetch(`${BACKEND}/api/plaid/exchange-token`, {
+      const res = await backendFetch('/api/plaid/exchange-token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           public_token,
-          user_id: user.id,
           institution_name: metadata?.institution?.name,
         }),
       })

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { getPlan, setPlan, FREE_TRIP_LIMIT } from '../lib/plan'
 
-const BACKEND = 'http://localhost:3002'
+import { backendFetch } from '../lib/api'
 
 function groupByInstitution(connections) {
   const map = {}
@@ -60,11 +60,7 @@ export default function Account() {
     setSyncStatus('syncing')
     setSyncResult(null)
     try {
-      const res = await fetch(`${BACKEND}/api/plaid/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
-      })
+      const res = await backendFetch('/api/plaid/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
       setSyncResult(data.synced)

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
-const BACKEND = 'http://localhost:3002'
+import { backendFetch } from '../lib/api'
 
 const CATEGORY_LABELS = {
   fuel: 'Fuel', campground: 'Campground', food_groceries: 'Food & Groceries',
@@ -32,6 +32,11 @@ export default function TripDetail() {
   const [editNote, setEditNote] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState('')
+
+  // Filters
+  const [filterSearch, setFilterSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterSort, setFilterSort] = useState('')
 
   // Campground stops
   const [stops, setStops] = useState([])
@@ -65,11 +70,7 @@ export default function TripDetail() {
   const handleSync = async () => {
     setSyncStatus('syncing')
     try {
-      await fetch(`${BACKEND}/api/plaid/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
-      })
+      await backendFetch('/api/plaid/sync', { method: 'POST' })
       await fetchExpenses()
       setSyncStatus('done')
       setTimeout(() => setSyncStatus('idle'), 3000)
@@ -180,10 +181,12 @@ export default function TripDetail() {
 
   if (!trip) return <div style={{ padding: 32, textAlign: 'center', color: '#8b5e3c' }}>Trip not found.</div>
 
-  const totalSpent = expenses.reduce((s, e) => s + effectiveAmount(e), 0)
+  const reviewedExpenses = expenses.filter(e => e.reviewed)
+  const totalSpent = reviewedExpenses.reduce((s, e) => s + effectiveAmount(e), 0)
+  const unreviewedTotal = expenses.filter(e => !e.reviewed).reduce((s, e) => s + effectiveAmount(e), 0)
   const totalBudget = Number(trip.total_budget) || 0
   const pct = totalBudget > 0 ? Math.min((totalSpent / totalBudget) * 100, 100) : 0
-  const spentByCategory = expenses.reduce((acc, e) => {
+  const spentByCategory = reviewedExpenses.reduce((acc, e) => {
     acc[e.category] = (acc[e.category] || 0) + effectiveAmount(e); return acc
   }, {})
   const nights = trip.start_date && trip.end_date
@@ -216,12 +219,26 @@ export default function TripDetail() {
     gear: '#9b7bb8', repairs: '#d4622a', misc: '#a89070',
   }
 
+  const filteredExpenses = expenses
+    .filter(e => !filterCategory || e.category === filterCategory)
+    .filter(e => {
+      if (!filterSearch) return true
+      const term = filterSearch.toLowerCase()
+      return (e.merchant_name || '').toLowerCase().includes(term) ||
+             (e.note || '').toLowerCase().includes(term)
+    })
+    .sort((a, b) => {
+      if (filterSort === 'asc') return effectiveAmount(a) - effectiveAmount(b)
+      if (filterSort === 'desc') return effectiveAmount(b) - effectiveAmount(a)
+      return 0
+    })
+
   const donutData = Object.entries(spentByCategory)
     .filter(([, v]) => v > 0)
     .map(([cat, value]) => ({ name: CATEGORY_LABELS[cat] || cat, value: Number(value.toFixed(2)), cat }))
 
   const dailyData = Object.entries(
-    expenses.reduce((acc, e) => {
+    reviewedExpenses.reduce((acc, e) => {
       acc[e.expense_date] = (acc[e.expense_date] || 0) + effectiveAmount(e)
       return acc
     }, {})
@@ -237,36 +254,28 @@ export default function TripDetail() {
         <Link to="/dashboard" style={{ fontSize: 14, color: '#8b5e3c', textDecoration: 'none', display: 'block', marginBottom: 10 }}>
           ← All trips
         </Link>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: 26, fontWeight: 700, color: '#4a3728', margin: 0 }}>{trip.name}</h1>
-            {trip.destination && <p style={{ fontSize: 15, color: '#8b5e3c', marginTop: 4 }}>{trip.destination}</p>}
-          </div>
-          <Link to={`/trips/${id}/review`} style={{
-            background: '#2d5a27', color: 'white', padding: '10px 16px',
-            borderRadius: 12, fontSize: 14, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap'
-          }}>
-            Review transactions
-          </Link>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#4a3728', margin: 0 }}>{trip.name}</h1>
+          {trip.destination && <p style={{ fontSize: 15, color: '#8b5e3c', marginTop: 4 }}>{trip.destination}</p>}
         </div>
       </div>
 
-      {/* Review banner — shown when trip is active and unreviewed transactions exist */}
-      {tripIsActive && unreviewedCount > 0 && (
+      {/* Pending review banner */}
+      {unreviewedCount > 0 && (
         <div style={{ background: '#fdf6e8', border: '1px solid #e8d5b0', borderRadius: 14, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <p style={{ fontSize: 14, fontWeight: 600, color: '#4a3728', margin: 0 }}>
-              {unreviewedCount} transaction{unreviewedCount !== 1 ? 's' : ''} to review
+            <p style={{ fontSize: 15, fontWeight: 700, color: '#4a3728', margin: 0 }}>
+              ${unreviewedTotal.toFixed(2)} pending review
             </p>
             <p style={{ fontSize: 12, color: '#8b5e3c', margin: '2px 0 0' }}>
-              New purchases since your last review are waiting.
+              {unreviewedCount} transaction{unreviewedCount !== 1 ? 's' : ''} not yet counted in totals
             </p>
           </div>
           <Link to={`/trips/${id}/review`} style={{
             background: '#2d5a27', color: 'white', padding: '8px 16px',
             borderRadius: 10, fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap'
           }}>
-            Review now
+            Review
           </Link>
         </div>
       )}
@@ -602,19 +611,60 @@ export default function TripDetail() {
           </div>
         )}
 
+        {expenses.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Search merchant..."
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              style={{ flex: '1 1 140px', border: '1px solid #e8d5b0', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', minWidth: 0 }}
+            />
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              style={{ flex: '1 1 120px', border: '1px solid #e8d5b0', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white', color: filterCategory ? '#4a3728' : '#b0a090' }}
+            >
+              <option value="">All categories</option>
+              {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select
+              value={filterSort}
+              onChange={e => setFilterSort(e.target.value)}
+              style={{ flex: '1 1 110px', border: '1px solid #e8d5b0', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white', color: filterSort ? '#4a3728' : '#b0a090' }}
+            >
+              <option value="">Date order</option>
+              <option value="desc">Highest first</option>
+              <option value="asc">Lowest first</option>
+            </select>
+            {(filterSearch || filterCategory || filterSort) && (
+              <button
+                onClick={() => { setFilterSearch(''); setFilterCategory(''); setFilterSort('') }}
+                style={{ border: '1px solid #e8d5b0', borderRadius: 10, padding: '8px 12px', fontSize: 13, background: 'white', color: '#8b5e3c', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
         {expenses.length === 0 ? (
           <p style={{ fontSize: 14, color: '#8b5e3c', textAlign: 'center', padding: '24px 0' }}>
             No expenses yet. Connect your bank or add cash purchases.
           </p>
+        ) : filteredExpenses.length === 0 ? (
+          <p style={{ fontSize: 14, color: '#8b5e3c', textAlign: 'center', padding: '24px 0' }}>
+            No expenses match your filters.
+          </p>
         ) : (
           <div>
-            {expenses.slice(0, 20).map((e, i) => {
+            {filteredExpenses.slice(0, 30).map((e, i) => {
               const adjusted = e.adjusted_amount != null
               const displayed = effectiveAmount(e)
               const isEditing = editingId === e.id
 
               return (
-                <div key={e.id} style={{ borderBottom: i < Math.min(expenses.length, 20) - 1 ? '1px solid #f5e6c8' : 'none' }}>
+                <div key={e.id} style={{ borderBottom: i < Math.min(filteredExpenses.length, 30) - 1 ? '1px solid #f5e6c8' : 'none' }}>
                   {/* Row */}
                   <div
                     onClick={() => isEditing ? setEditingId(null) : openEdit(e)}
